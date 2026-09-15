@@ -1,22 +1,91 @@
-      - name: Send success email
-        if: success()
+name: Movie Pick CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test API and Docker image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run product tests
+        run: pytest -q
+
+      - name: Build Docker image
+        run: docker build --tag movie-pick:test .
+
+      - name: Start Docker container
+        run: docker run --detach --name movie-pick-test --publish 8000:8000 movie-pick:test
+
+      - name: Smoke test Docker container
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://localhost:8000/stats > /tmp/stats.json; then
+              python -c "import json; data=json.load(open('/tmp/stats.json')); assert data['total_movies'] == 70"
+              break
+            fi
+            sleep 1
+          done
+          test -s /tmp/stats.json
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs movie-pick-test
+
+      - name: Stop Docker container
+        if: always()
+        run: docker rm --force movie-pick-test
+
+  notify:
+    name: Email CI result
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+      MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+      MAIL_TO: ${{ secrets.MAIL_TO }}
+
+    steps:
+      - name: Send CI result email
+        if: env.MAIL_USERNAME != '' && env.MAIL_PASSWORD != '' && env.MAIL_TO != ''
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
           secure: true
-          username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "Echoes CI: Build successful"
-          to: ${{ secrets.MAIL_TO }}
-          from: ${{ secrets.MAIL_USERNAME }}
+          username: ${{ env.MAIL_USERNAME }}
+          password: ${{ env.MAIL_PASSWORD }}
+          subject: "Movie Pick CI: ${{ needs.test.result }}"
+          to: ${{ env.MAIL_TO }}
+          from: ${{ env.MAIL_USERNAME }}
           body: |
-            Hi,
-
-            Your Echoes React application passed all CI checks!
+            Movie Pick CI finished with status: ${{ needs.test.result }}
 
             Repository: ${{ github.repository }}
             Branch: ${{ github.ref_name }}
             Commit: ${{ github.sha }}
+            Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-            FASTAPI server and the production build completed successfully, ready to serve.
+      - name: Explain skipped notification
+        if: env.MAIL_USERNAME == '' || env.MAIL_PASSWORD == '' || env.MAIL_TO == ''
+        run: echo "Email skipped because MAIL_USERNAME, MAIL_PASSWORD, or MAIL_TO is not configured."
