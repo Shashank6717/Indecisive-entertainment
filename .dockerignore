@@ -1,0 +1,7 @@
+__pycache__
+*.pyc
+*.pyo
+movies.db
+venv/
+.git
+.gitignore
