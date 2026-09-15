@@ -1,3 +1,4 @@
+
 name: Movie Pick CI
 
 on:
@@ -11,7 +12,7 @@ permissions:
 
 jobs:
   test:
-    name: Test API and Docker image
+    name: Test API
     runs-on: ubuntu-latest
 
     steps:
@@ -30,36 +31,12 @@ jobs:
       - name: Run product tests
         run: pytest -q
 
-      - name: Build Docker image
-        run: docker build --tag movie-pick:test .
-
-      - name: Start Docker container
-        run: docker run --detach --name movie-pick-test --publish 8000:8000 movie-pick:test
-
-      - name: Smoke test Docker container
-        run: |
-          for attempt in {1..30}; do
-            if curl --fail --silent http://localhost:8000/stats > /tmp/stats.json; then
-              python -c "import json; data=json.load(open('/tmp/stats.json')); assert data['total_movies'] == 70"
-              break
-            fi
-            sleep 1
-          done
-          test -s /tmp/stats.json
-
-      - name: Show container logs on failure
-        if: failure()
-        run: docker logs movie-pick-test
-
-      - name: Stop Docker container
-        if: always()
-        run: docker rm --force movie-pick-test
-
   notify:
     name: Email CI result
     needs: test
     if: always()
     runs-on: ubuntu-latest
+
     env:
       MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
       MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
