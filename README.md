@@ -1,4 +1,4 @@
-# Movie Pick API
+# Indecisive Entertainment
 
 > Can't decide what to watch? Let the API decide for you.
 
